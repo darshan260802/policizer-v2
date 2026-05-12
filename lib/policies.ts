@@ -25,6 +25,7 @@ type PolicyInput = {
   premiumMethod: PremiumMethod
   policyStartDate: string
   maturityDate: string
+  lastPaymentDate: string
   premiumAmount: number
   sumAssured: number
   additionalNote: string
@@ -112,18 +113,23 @@ function monthsForMethod(method: PremiumMethod) {
   }
 }
 
-function buildInstallments(policy: Pick<PolicyInput, "policyStartDate" | "maturityDate" | "premiumMethod">) {
+function buildInstallments(
+  policy: Pick<
+    PolicyInput,
+    "policyStartDate" | "maturityDate" | "lastPaymentDate" | "premiumMethod"
+  >
+) {
   if (policy.premiumMethod === "single") {
     return [] as PolicyInstallment[]
   }
 
   const intervalMonths = monthsForMethod(policy.premiumMethod)
-  const maturityDate = parseDate(policy.maturityDate)
+  const installmentEndDate = parseDate(policy.lastPaymentDate || policy.maturityDate)
   const paidThrough = getTodayYmd()
   const installments: PolicyInstallment[] = []
   let cursor = addMonthsClamped(parseDate(policy.policyStartDate), intervalMonths)
 
-  while (cursor <= maturityDate) {
+  while (cursor <= installmentEndDate) {
     const dueDate = formatDate(cursor)
     const status: InstallmentStatus = dueDate <= paidThrough ? "paid" : "pending"
     installments.push({
@@ -166,7 +172,10 @@ function derivePaymentState(installments: PolicyInstallment[]) {
 
 async function replaceInstallments(
   policyId: string,
-  policy: Pick<PolicyInput, "policyStartDate" | "maturityDate" | "premiumMethod">
+  policy: Pick<
+    PolicyInput,
+    "policyStartDate" | "maturityDate" | "lastPaymentDate" | "premiumMethod"
+  >
 ) {
   const installmentsCollection = collection(db, "policies", policyId, "installments")
   const existingInstallments = await getDocs(installmentsCollection)
@@ -224,6 +233,7 @@ async function listPolicies(uid: string) {
         premiumMethod: raw.premiumMethod ?? "monthly",
         policyStartDate: raw.policyStartDate ?? "",
         maturityDate: raw.maturityDate ?? "",
+        lastPaymentDate: raw.lastPaymentDate ?? raw.maturityDate ?? "",
         premiumAmount: Number(raw.premiumAmount ?? 0),
         sumAssured: Number(raw.sumAssured ?? 0),
         additionalNote: raw.additionalNote ?? "",

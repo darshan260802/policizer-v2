@@ -30,6 +30,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel"
 import {
   Drawer,
   DrawerClose,
@@ -48,6 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -72,21 +74,27 @@ type PolicyFormState = {
   premiumMethod: PremiumMethod
   policyStartDate: string
   maturityDate: string
+  lastPaymentDate: string
+  useMaturityAsLastPayment: boolean
   premiumAmount: string
   sumAssured: string
   additionalNote: string
 }
 
-const emptyFormState: PolicyFormState = {
-  insurerName: "",
-  policyNumber: "",
-  beneficiaryName: "",
-  premiumMethod: "monthly",
-  policyStartDate: "",
-  maturityDate: "",
-  premiumAmount: "",
-  sumAssured: "",
-  additionalNote: "",
+function createEmptyFormState(): PolicyFormState {
+  return {
+    insurerName: "",
+    policyNumber: "",
+    beneficiaryName: "",
+    premiumMethod: "monthly",
+    policyStartDate: "",
+    maturityDate: "",
+    lastPaymentDate: "",
+    useMaturityAsLastPayment: true,
+    premiumAmount: "",
+    sumAssured: "",
+    additionalNote: "",
+  }
 }
 
 const premiumMethodLabels: Record<PremiumMethod, string> = {
@@ -105,6 +113,8 @@ function toFormState(policy: PolicyRecord): PolicyFormState {
     premiumMethod: policy.premiumMethod,
     policyStartDate: policy.policyStartDate,
     maturityDate: policy.maturityDate,
+    lastPaymentDate: policy.lastPaymentDate,
+    useMaturityAsLastPayment: policy.lastPaymentDate === policy.maturityDate,
     premiumAmount: String(policy.premiumAmount),
     sumAssured: String(policy.sumAssured),
     additionalNote: policy.additionalNote,
@@ -119,6 +129,9 @@ function toPolicyInput(formState: PolicyFormState): PolicyInput {
     premiumMethod: formState.premiumMethod,
     policyStartDate: formState.policyStartDate,
     maturityDate: formState.maturityDate,
+    lastPaymentDate: formState.useMaturityAsLastPayment
+      ? formState.maturityDate
+      : formState.lastPaymentDate,
     premiumAmount: Number(formState.premiumAmount),
     sumAssured: Number(formState.sumAssured),
     additionalNote: formState.additionalNote.trim(),
@@ -144,7 +157,7 @@ export default function PoliciesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerMode, setDrawerMode] = useState<DrawerMode>("create")
   const [activePolicy, setActivePolicy] = useState<PolicyRecord | null>(null)
-  const [formState, setFormState] = useState<PolicyFormState>(emptyFormState)
+  const [formState, setFormState] = useState<PolicyFormState>(createEmptyFormState())
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -214,8 +227,9 @@ export default function PoliciesPage() {
   const openCreateDrawer = () => {
     setDrawerMode("create")
     setActivePolicy(null)
-    setFormState(emptyFormState)
+    setFormState(createEmptyFormState())
     setFormError(null)
+    setIsSaving(false)
     setDrawerOpen(true)
   }
 
@@ -240,6 +254,8 @@ export default function PoliciesPage() {
       return
     }
 
+    setDrawerMode("create")
+    setActivePolicy(null)
     setFormError(null)
     setIsSaving(false)
   }
@@ -250,13 +266,26 @@ export default function PoliciesPage() {
       !value.policyNumber.trim() ||
       !value.beneficiaryName.trim() ||
       !value.policyStartDate ||
-      !value.maturityDate
+      !value.maturityDate ||
+      (!value.useMaturityAsLastPayment && !value.lastPaymentDate)
     ) {
       return "Please complete all required fields."
     }
 
     if (value.policyStartDate > value.maturityDate) {
       return "Maturity date must be after policy start date."
+    }
+
+    const effectiveLastPaymentDate = value.useMaturityAsLastPayment
+      ? value.maturityDate
+      : value.lastPaymentDate
+
+    if (value.policyStartDate > effectiveLastPaymentDate) {
+      return "Last payment date must be on or after policy start date."
+    }
+
+    if (effectiveLastPaymentDate > value.maturityDate) {
+      return "Last payment date must not be after maturity date."
     }
 
     const premiumAmount = Number(value.premiumAmount)
@@ -297,8 +326,8 @@ export default function PoliciesPage() {
         await createPolicy(user.uid, payload)
       }
 
-      setDrawerOpen(false)
-      setFormState(emptyFormState)
+      closeDrawer(false)
+      setFormState(createEmptyFormState())
       refreshPolicies()
     } catch (error) {
       if (error instanceof FirebaseError) {
@@ -371,7 +400,7 @@ export default function PoliciesPage() {
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
           <Card className="border border-primary/20 bg-linear-to-r from-primary/10 via-primary/5 to-transparent">
             <CardHeader className="gap-3">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-2">
                   <Badge className="w-fit rounded-full" variant="secondary">
                     Protected workspace
@@ -384,12 +413,12 @@ export default function PoliciesPage() {
                     Add, track, and manage policies with installment-aware actions.
                   </CardDescription>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex w-full flex-col gap-2 sm:w-auto">
                   <Button onClick={openCreateDrawer} className="w-full sm:w-auto">
                     <Plus className="size-4" />
                     Add policy
                   </Button>
-                  <Button variant="outline" asChild>
+                  <Button variant="outline" asChild className="w-full sm:w-auto">
                     <Link href="/dashboard">Go to dashboard</Link>
                   </Button>
                 </div>
@@ -449,82 +478,98 @@ export default function PoliciesPage() {
 
           {!isLoading && policyList.length > 0 ? (
             <>
-              <div className="space-y-3 md:hidden">
-                {policyList.map((policy) => (
-                  <Card key={policy.id} className="border border-border/70 bg-card/90">
-                    <CardHeader className="gap-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <CardTitle className="text-base">{policy.insurerName}</CardTitle>
-                          <CardDescription>#{policy.policyNumber}</CardDescription>
-                        </div>
-                        <Badge variant={isMarkAsPaidEnabled(policy) ? "destructive" : "secondary"}>
-                          {policy.nextPaymentDate ? `Next: ${policy.nextPaymentDate}` : "No dues"}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <InfoPair label="Beneficiary" value={policy.beneficiaryName} />
-                        <InfoPair
-                          label="Method"
-                          value={premiumMethodLabels[policy.premiumMethod]}
-                        />
-                        <InfoPair
-                          label="Premium"
-                          value={formatCurrency(policy.premiumAmount)}
-                        />
-                        <InfoPair
-                          label="Sum assured"
-                          value={formatCurrency(policy.sumAssured)}
-                        />
-                        <InfoPair
-                          label="Last paid"
-                          value={policy.lastPremiumPaymentDate ?? "N/A"}
-                        />
-                        <InfoPair
-                          label="Pending"
-                          value={String(policy.pendingInstallments)}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openViewDrawer(policy)}
-                        >
-                          <Eye className="size-4" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDrawer(policy)}
-                        >
-                          <FilePenLine className="size-4" />
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setPolicyToDelete(policy)}
-                        >
-                          <Trash2 className="size-4" />
-                          Delete
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => void handleMarkAsPaid(policy)}
-                          disabled={
-                            !isMarkAsPaidEnabled(policy) || payingPolicyId === policy.id
-                          }
-                        >
-                          {payingPolicyId === policy.id ? "Paying..." : "Mark paid"}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+              <div className="md:hidden">
+                <Carousel
+                  opts={{ align: "start", containScroll: "trimSnaps" }}
+                  className="w-full"
+                >
+                  <CarouselContent className="-ml-3">
+                    {policyList.map((policy) => (
+                      <CarouselItem key={policy.id} className="basis-[92%] pl-3">
+                        <Card className="border border-border/70 bg-card/90">
+                          <CardHeader className="gap-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <CardTitle className="text-base">{policy.insurerName}</CardTitle>
+                                <CardDescription>#{policy.policyNumber}</CardDescription>
+                              </div>
+                              <Badge
+                                variant={
+                                  isMarkAsPaidEnabled(policy) ? "destructive" : "secondary"
+                                }
+                              >
+                                {policy.nextPaymentDate
+                                  ? `Next: ${policy.nextPaymentDate}`
+                                  : "No dues"}
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <InfoPair label="Beneficiary" value={policy.beneficiaryName} />
+                              <InfoPair
+                                label="Method"
+                                value={premiumMethodLabels[policy.premiumMethod]}
+                              />
+                              <InfoPair
+                                label="Premium"
+                                value={formatCurrency(policy.premiumAmount)}
+                              />
+                              <InfoPair
+                                label="Sum assured"
+                                value={formatCurrency(policy.sumAssured)}
+                              />
+                              <InfoPair
+                                label="Last paid"
+                                value={policy.lastPremiumPaymentDate ?? "N/A"}
+                              />
+                              <InfoPair
+                                label="Pending"
+                                value={String(policy.pendingInstallments)}
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openViewDrawer(policy)}
+                              >
+                                <Eye className="size-4" />
+                                View
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEditDrawer(policy)}
+                              >
+                                <FilePenLine className="size-4" />
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setPolicyToDelete(policy)}
+                              >
+                                <Trash2 className="size-4" />
+                                Delete
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => void handleMarkAsPaid(policy)}
+                                disabled={
+                                  !isMarkAsPaidEnabled(policy) ||
+                                  payingPolicyId === policy.id
+                                }
+                              >
+                                {payingPolicyId === policy.id ? "Paying..." : "Mark paid"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </CarouselItem>
+                    ))}
+                  </CarouselContent>
+                </Carousel>
               </div>
 
               <Card className="hidden border border-border/70 bg-card/90 md:block">
@@ -614,7 +659,7 @@ export default function PoliciesPage() {
       </main>
 
       <Drawer open={drawerOpen} onOpenChange={closeDrawer}>
-        <DrawerContent>
+        <DrawerContent key={`${drawerMode}-${activePolicy?.id ?? "new"}`}>
           <DrawerHeader>
             <DrawerTitle>
               {drawerMode === "create"
@@ -631,7 +676,7 @@ export default function PoliciesPage() {
           </DrawerHeader>
 
           {drawerMode === "view" && activePolicy ? (
-            <div className="space-y-3 px-4 pb-2 text-sm">
+            <div className="space-y-3 overflow-y-auto px-4 pb-6 text-sm">
               <InfoPair label="Insurer" value={activePolicy.insurerName} />
               <InfoPair label="Policy number" value={activePolicy.policyNumber} />
               <InfoPair label="Beneficiary" value={activePolicy.beneficiaryName} />
@@ -641,6 +686,7 @@ export default function PoliciesPage() {
               />
               <InfoPair label="Policy start date" value={activePolicy.policyStartDate} />
               <InfoPair label="Maturity date" value={activePolicy.maturityDate} />
+              <InfoPair label="Last payment date" value={activePolicy.lastPaymentDate} />
               <InfoPair
                 label="Premium amount"
                 value={formatCurrency(activePolicy.premiumAmount)}
@@ -756,6 +802,56 @@ export default function PoliciesPage() {
                       setFormState((prev) => ({
                         ...prev,
                         maturityDate: event.target.value,
+                        lastPaymentDate: prev.useMaturityAsLastPayment
+                          ? event.target.value
+                          : prev.lastPaymentDate,
+                      }))
+                    }
+                  />
+                </FormField>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-background/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Last payment date</p>
+                    <p className="text-xs text-muted-foreground">
+                      Set the final premium payment date before maturity.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="sameAsMaturityDate" className="text-xs">
+                      Same as maturity
+                    </Label>
+                    <Switch
+                      id="sameAsMaturityDate"
+                      checked={formState.useMaturityAsLastPayment}
+                      onCheckedChange={(checked) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          useMaturityAsLastPayment: checked,
+                          lastPaymentDate: checked
+                            ? prev.maturityDate
+                            : prev.lastPaymentDate || prev.maturityDate,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <FormField label="Last payment date" required htmlFor="lastPaymentDate">
+                  <Input
+                    id="lastPaymentDate"
+                    type="date"
+                    value={
+                      formState.useMaturityAsLastPayment
+                        ? formState.maturityDate
+                        : formState.lastPaymentDate
+                    }
+                    disabled={formState.useMaturityAsLastPayment}
+                    onChange={(event) =>
+                      setFormState((prev) => ({
+                        ...prev,
+                        lastPaymentDate: event.target.value,
                       }))
                     }
                   />
@@ -822,15 +918,15 @@ export default function PoliciesPage() {
           <DrawerFooter>
             {drawerMode === "view" ? (
               <DrawerClose asChild>
-                <Button variant="outline">Close</Button>
+                <Button type="button" variant="outline">Close</Button>
               </DrawerClose>
             ) : (
               <>
-                <Button onClick={() => void handleSave()} disabled={isSaving}>
+                <Button type="button" onClick={() => void handleSave()} disabled={isSaving}>
                   {isSaving ? "Saving..." : "Save policy"}
                 </Button>
                 <DrawerClose asChild>
-                  <Button variant="outline">Cancel</Button>
+                  <Button type="button" variant="outline">Cancel</Button>
                 </DrawerClose>
               </>
             )}

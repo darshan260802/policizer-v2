@@ -128,7 +128,7 @@ export default function DashboardPage() {
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
           <Card className="border border-primary/20 bg-linear-to-r from-primary/10 via-primary/5 to-transparent">
             <CardHeader className="gap-3">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-2">
                   <Badge className="rounded-full" variant="secondary">
                     Insights dashboard
@@ -139,14 +139,19 @@ export default function DashboardPage() {
                   </CardTitle>
                   <CardDescription>{user?.email ?? "Google account connected"}</CardDescription>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Button variant="outline" asChild>
+                <div className="flex w-full flex-col gap-2 sm:w-auto">
+                  <Button variant="outline" asChild className="w-full sm:w-auto">
                     <Link href="/policies">
                       <ListPlus className="size-4" />
                       Manage policies
                     </Link>
                   </Button>
-                  <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+                  <Button
+                    variant="outline"
+                    onClick={handleSignOut}
+                    disabled={isSigningOut}
+                    className="w-full sm:w-auto"
+                  >
                     <LogOut className="size-4" />
                     {isSigningOut ? "Signing out..." : "Sign out"}
                   </Button>
