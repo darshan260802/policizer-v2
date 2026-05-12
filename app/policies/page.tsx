@@ -485,7 +485,7 @@ export default function PoliciesPage() {
                 >
                   <CarouselContent className="-ml-3">
                     {policyList.map((policy) => (
-                      <CarouselItem key={policy.id} className="basis-[92%] pl-3">
+                      <CarouselItem key={policy.id} className="basis-full pl-3">
                         <Card className="border border-border/70 bg-card/90">
                           <CardHeader className="gap-2">
                             <div className="flex items-start justify-between gap-2">
