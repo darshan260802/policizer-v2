@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Geist_Mono, JetBrains_Mono, Space_Grotesk } from "next/font/google"
 
 import "./globals.css"
+import { AuthProvider } from "@/components/auth/auth-provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 
@@ -45,7 +46,7 @@ export default function RootLayout({
       >
       <body>
         <ThemeProvider defaultTheme="dark" forcedTheme="dark" enableSystem={false}>
-          {children}
+          <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
       </body>
     </html>

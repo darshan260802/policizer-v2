@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import {
   Area,
@@ -8,6 +9,7 @@ import {
   XAxis,
 } from "recharts"
 import {
+  ArrowRight,
   BellRing,
   ChartNoAxesCombined,
   Download,
@@ -19,6 +21,7 @@ import {
 } from "lucide-react"
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { PublicRoute } from "@/components/auth/public-route"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -111,59 +114,62 @@ const faqs = [
 
 export default function Page() {
   return (
-    <main className="min-h-svh bg-background text-foreground">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-6 sm:px-6 sm:py-10">
-        <header className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex size-9 items-center justify-center rounded-2xl bg-primary/20 text-primary ring-1 ring-primary/30">
-              <ShieldCheck className="size-5" />
-            </span>
-            <div>
-              <p className="text-sm font-medium">Policizer</p>
-              <p className="text-xs text-muted-foreground">Insurance Policy Manager</p>
+    <PublicRoute>
+      <main className="min-h-svh bg-background text-foreground">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-6 sm:px-6 sm:py-10">
+          <header className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex size-9 items-center justify-center rounded-2xl bg-primary/20 text-primary ring-1 ring-primary/30">
+                <ShieldCheck className="size-5" />
+              </span>
+              <div>
+                <p className="text-sm font-medium">Policizer</p>
+                <p className="text-xs text-muted-foreground">Insurance Policy Manager</p>
+              </div>
             </div>
-          </div>
-          <Badge variant="secondary" className="rounded-full">
-            Dark mode only
-          </Badge>
-        </header>
-
-        <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-          <div className="space-y-4">
-            <Badge variant="outline" className="rounded-full border-primary/30 text-primary">
-              Mobile-first experience
+            <Badge variant="secondary" className="rounded-full">
+              Dark mode only
             </Badge>
-            <h1 className="font-heading text-3xl leading-tight sm:text-4xl">
-              Manage every policy in one calm, smart dashboard.
-            </h1>
-            <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Track LIC, Max Life, and other policies in a single place with reminders,
-              table views, analytics, and easy exports.
-            </p>
-            <div id="install" className="flex flex-col gap-2 sm:flex-row">
-              <Button size="lg" className="w-full sm:w-auto">
-                <Download className="size-4" />
-                Install app
-              </Button>
-              <Button size="lg" variant="outline" asChild className="w-full sm:w-auto">
-                <a href="#features">Explore features</a>
-              </Button>
-            </div>
-          </div>
+          </header>
 
-          <Card className="border border-primary/20 bg-linear-to-b from-card to-card/80">
-            <CardHeader>
-              <CardTitle>At-a-glance performance</CardTitle>
-              <CardDescription>Quick snapshot across all active policies</CardDescription>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
-              <StatTile label="Lump sum" value="Rs 17.5L" />
-              <StatTile label="Projected returns" value="Rs 22.1L" />
-              <StatTile label="Pending premiums" value="Rs 48K" />
-              <StatTile label="Next due date" value="14 May" />
-            </CardContent>
-          </Card>
-        </section>
+          <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div className="space-y-4">
+              <Badge variant="outline" className="rounded-full border-primary/30 text-primary">
+                Mobile-first experience
+              </Badge>
+              <h1 className="font-heading text-3xl leading-tight sm:text-4xl">
+                Manage every policy in one calm, smart dashboard.
+              </h1>
+              <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+                Track LIC, Max Life, and other policies in a single place with reminders,
+                table views, analytics, and easy exports.
+              </p>
+              <div id="install" className="flex flex-col gap-2 sm:flex-row">
+                <Button size="lg" className="w-full sm:w-auto" asChild>
+                  <Link href="/login">
+                    Continue with Google
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" asChild className="w-full sm:w-auto">
+                  <a href="#features">Explore features</a>
+                </Button>
+              </div>
+            </div>
+
+            <Card className="border border-primary/20 bg-linear-to-b from-card to-card/80">
+              <CardHeader>
+                <CardTitle>At-a-glance performance</CardTitle>
+                <CardDescription>Quick snapshot across all active policies</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-3">
+                <StatTile label="Lump sum" value="Rs 17.5L" />
+                <StatTile label="Projected returns" value="Rs 22.1L" />
+                <StatTile label="Pending premiums" value="Rs 48K" />
+                <StatTile label="Next due date" value="14 May" />
+              </CardContent>
+            </Card>
+          </section>
 
         <section className="space-y-3">
           <p className="text-xs tracking-wide text-muted-foreground uppercase">
@@ -314,26 +320,29 @@ export default function Page() {
           </Card>
         </section>
 
-        <Card className="border border-primary/30 bg-linear-to-r from-primary/15 via-primary/10 to-transparent">
-          <CardHeader>
-            <CardTitle className="text-xl">Ready to simplify policy management?</CardTitle>
-            <CardDescription>
-              Install Policizer and keep your premiums, maturity timelines, and returns visible in one place.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 sm:flex-row">
-            <Button size="lg" className="w-full sm:w-auto">
-              <Download className="size-4" />
-              Install app
-            </Button>
-            <Button size="lg" variant="outline" className="w-full sm:w-auto">
-              <WalletCards className="size-4" />
-              View product roadmap
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+          <Card className="border border-primary/30 bg-linear-to-r from-primary/15 via-primary/10 to-transparent">
+            <CardHeader>
+              <CardTitle className="text-xl">Ready to simplify policy management?</CardTitle>
+              <CardDescription>
+                Sign in and keep your premiums, maturity timelines, and returns visible in one place.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 sm:flex-row">
+              <Button size="lg" className="w-full sm:w-auto" asChild>
+                <Link href="/login">
+                  <Download className="size-4" />
+                  Continue with Google
+                </Link>
+              </Button>
+              <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                <WalletCards className="size-4" />
+                View product roadmap
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    </PublicRoute>
   )
 }
 
