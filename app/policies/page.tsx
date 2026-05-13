@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Eye,
   FilePenLine,
+  MoveHorizontal,
   Plus,
   ReceiptIndianRupee,
   ShieldCheck,
@@ -479,17 +480,7 @@ export default function PoliciesPage() {
 
     return policy.nextPaymentDate <= today
   }
-
-  useEffect(() => {
-    setMobileActiveIndex((prev) => getWrappedIndex(prev, policyList.length))
-    if (policyList.length > 1) {
-      return
-    }
-    mobileDragStartXRef.current = null
-    setMobileDragDeltaX(0)
-    setMobileIsDragging(false)
-    setMobileIsAnimating(false)
-  }, [getWrappedIndex, policyList.length])
+  const mobileVisibleIndex = getWrappedIndex(mobileActiveIndex, policyList.length)
 
   useEffect(() => {
     return () => {
@@ -584,10 +575,10 @@ export default function PoliciesPage() {
           {!isLoading && policyList.length > 0 ? (
             <>
               <div className="md:hidden">
-                <div className="relative h-[430px]">
+                <div className="relative mb-7 h-[430px]">
                   {policyList.map((policy, index) => {
                     const relativePosition = getWrappedIndex(
-                      index - mobileActiveIndex,
+                      index - mobileVisibleIndex,
                       policyList.length
                     )
                     if (relativePosition >= MOBILE_STACK_VISIBLE_COUNT) {
@@ -597,10 +588,10 @@ export default function PoliciesPage() {
                     const isTopCard = relativePosition === 0
                     const depthOffsetY = relativePosition * 14
                     const scale = 1 - relativePosition * 0.04
-                    const opacity = Math.max(0.55, 1 - relativePosition * 0.16)
                     const dragOffsetX = isTopCard && mobileIsDragging ? mobileDragDeltaX : 0
                     const clampedDragOffsetX = Math.max(-90, Math.min(90, dragOffsetX))
                     const dragRotation = isTopCard ? clampedDragOffsetX / 18 : 0
+                    const depthBlur = relativePosition === 0 ? 0 : relativePosition * 0.9
 
                     return (
                       <div
@@ -608,13 +599,13 @@ export default function PoliciesPage() {
                         className="absolute inset-x-0 top-0"
                         style={{
                           zIndex: MOBILE_STACK_VISIBLE_COUNT - relativePosition,
-                          opacity,
                           pointerEvents: isTopCard ? "auto" : "none",
                           transform: `translate3d(${clampedDragOffsetX}px, ${depthOffsetY}px, 0) scale(${scale}) rotate(${dragRotation}deg)`,
+                          filter: isTopCard ? "none" : `blur(${depthBlur}px)`,
                           transition:
                             mobileIsDragging && isTopCard
                               ? "none"
-                              : "transform 220ms ease, opacity 220ms ease",
+                              : "transform 220ms ease",
                           touchAction: "pan-y",
                         }}
                         onPointerDown={
@@ -631,7 +622,13 @@ export default function PoliciesPage() {
                         onPointerCancel={isTopCard ? handleMobilePointerEnd : undefined}
                         onPointerLeave={isTopCard ? handleMobilePointerEnd : undefined}
                       >
-                        <Card className="border border-border/70 bg-card/90 shadow-lg">
+                        <Card
+                          className={
+                            isTopCard
+                              ? "border border-border/70 bg-card shadow-xl"
+                              : "border border-border/70 bg-card/90 shadow-lg backdrop-blur-sm"
+                          }
+                        >
                           <CardHeader className="gap-2">
                             <div className="flex items-start justify-between gap-2">
                               <div>
@@ -714,6 +711,14 @@ export default function PoliciesPage() {
                       </div>
                     )
                   })}
+                  {mobileSwipeEnabled ? (
+                    <div className="pointer-events-none absolute inset-x-0 -bottom-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                      <span>←</span>
+                      <MoveHorizontal className="size-3.5" />
+                      <span>Swipe cards</span>
+                      <span>→</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
