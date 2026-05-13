@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import type { ReactNode } from "react"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FirebaseError } from "firebase/app"
 import {
   CalendarClock,
@@ -30,7 +30,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel"
 import {
   Drawer,
   DrawerClose,
@@ -105,6 +104,10 @@ const premiumMethodLabels: Record<PremiumMethod, string> = {
   yearly: "Yearly",
 }
 
+const MOBILE_STACK_VISIBLE_COUNT = 3
+const MOBILE_SWIPE_THRESHOLD_PX = 45
+const MOBILE_ANIMATION_LOCK_MS = 220
+
 function toFormState(policy: PolicyRecord): PolicyFormState {
   return {
     insurerName: policy.insurerName,
@@ -164,10 +167,93 @@ export default function PoliciesPage() {
   const [policyToDelete, setPolicyToDelete] = useState<PolicyRecord | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [payingPolicyId, setPayingPolicyId] = useState<string | null>(null)
+  const [mobileActiveIndex, setMobileActiveIndex] = useState(0)
+  const [mobileDragDeltaX, setMobileDragDeltaX] = useState(0)
+  const [mobileIsDragging, setMobileIsDragging] = useState(false)
+  const [mobileIsAnimating, setMobileIsAnimating] = useState(false)
+  const mobileDragStartXRef = useRef<number | null>(null)
+  const mobileAnimationTimerRef = useRef<number | null>(null)
 
   const today = getTodayYmd()
   const isLoading = policies === null
   const policyList = useMemo(() => policies ?? [], [policies])
+  const mobileSwipeEnabled = policyList.length > 1
+
+  const getWrappedIndex = useCallback((index: number, length: number) => {
+    if (length <= 0) {
+      return 0
+    }
+    return ((index % length) + length) % length
+  }, [])
+
+  const queueMobileAnimationUnlock = useCallback(() => {
+    if (mobileAnimationTimerRef.current !== null) {
+      window.clearTimeout(mobileAnimationTimerRef.current)
+    }
+    mobileAnimationTimerRef.current = window.setTimeout(() => {
+      setMobileIsAnimating(false)
+      mobileAnimationTimerRef.current = null
+    }, MOBILE_ANIMATION_LOCK_MS)
+  }, [])
+
+  const advanceMobileStack = useCallback(
+    (direction: "next" | "prev") => {
+      if (!mobileSwipeEnabled || mobileIsAnimating) {
+        return
+      }
+      setMobileIsAnimating(true)
+      setMobileActiveIndex((prev) =>
+        getWrappedIndex(prev + (direction === "next" ? 1 : -1), policyList.length)
+      )
+      queueMobileAnimationUnlock()
+    },
+    [getWrappedIndex, mobileIsAnimating, mobileSwipeEnabled, policyList.length, queueMobileAnimationUnlock]
+  )
+
+  const handleMobilePointerDown = useCallback(
+    (clientX: number) => {
+      if (!mobileSwipeEnabled || mobileIsAnimating) {
+        return
+      }
+      mobileDragStartXRef.current = clientX
+      setMobileDragDeltaX(0)
+      setMobileIsDragging(true)
+    },
+    [mobileIsAnimating, mobileSwipeEnabled]
+  )
+
+  const handleMobilePointerMove = useCallback(
+    (clientX: number) => {
+      const dragStartX = mobileDragStartXRef.current
+      if (!mobileIsDragging || dragStartX === null) {
+        return
+      }
+      setMobileDragDeltaX(clientX - dragStartX)
+    },
+    [mobileIsDragging]
+  )
+
+  const handleMobilePointerEnd = useCallback(() => {
+    if (!mobileIsDragging) {
+      return
+    }
+
+    const deltaX = mobileDragDeltaX
+    mobileDragStartXRef.current = null
+    setMobileIsDragging(false)
+    setMobileDragDeltaX(0)
+
+    if (Math.abs(deltaX) < MOBILE_SWIPE_THRESHOLD_PX) {
+      return
+    }
+
+    if (deltaX < 0) {
+      advanceMobileStack("next")
+      return
+    }
+
+    advanceMobileStack("prev")
+  }, [advanceMobileStack, mobileDragDeltaX, mobileIsDragging])
 
   useEffect(() => {
     if (!user?.uid) {
@@ -394,6 +480,25 @@ export default function PoliciesPage() {
     return policy.nextPaymentDate <= today
   }
 
+  useEffect(() => {
+    setMobileActiveIndex((prev) => getWrappedIndex(prev, policyList.length))
+    if (policyList.length > 1) {
+      return
+    }
+    mobileDragStartXRef.current = null
+    setMobileDragDeltaX(0)
+    setMobileIsDragging(false)
+    setMobileIsAnimating(false)
+  }, [getWrappedIndex, policyList.length])
+
+  useEffect(() => {
+    return () => {
+      if (mobileAnimationTimerRef.current !== null) {
+        window.clearTimeout(mobileAnimationTimerRef.current)
+      }
+    }
+  }, [])
+
   return (
     <ProtectedRoute>
       <main className="min-h-svh px-4 py-6 sm:px-6 sm:py-10">
@@ -479,14 +584,54 @@ export default function PoliciesPage() {
           {!isLoading && policyList.length > 0 ? (
             <>
               <div className="md:hidden">
-                <Carousel
-                  opts={{ align: "start", containScroll: "trimSnaps" }}
-                  className="w-full"
-                >
-                  <CarouselContent className="-ml-3">
-                    {policyList.map((policy) => (
-                      <CarouselItem key={policy.id} className="basis-full pl-3">
-                        <Card className="border border-border/70 bg-card/90">
+                <div className="relative h-[430px]">
+                  {policyList.map((policy, index) => {
+                    const relativePosition = getWrappedIndex(
+                      index - mobileActiveIndex,
+                      policyList.length
+                    )
+                    if (relativePosition >= MOBILE_STACK_VISIBLE_COUNT) {
+                      return null
+                    }
+
+                    const isTopCard = relativePosition === 0
+                    const depthOffsetY = relativePosition * 14
+                    const scale = 1 - relativePosition * 0.04
+                    const opacity = Math.max(0.55, 1 - relativePosition * 0.16)
+                    const dragOffsetX = isTopCard && mobileIsDragging ? mobileDragDeltaX : 0
+                    const clampedDragOffsetX = Math.max(-90, Math.min(90, dragOffsetX))
+                    const dragRotation = isTopCard ? clampedDragOffsetX / 18 : 0
+
+                    return (
+                      <div
+                        key={policy.id}
+                        className="absolute inset-x-0 top-0"
+                        style={{
+                          zIndex: MOBILE_STACK_VISIBLE_COUNT - relativePosition,
+                          opacity,
+                          pointerEvents: isTopCard ? "auto" : "none",
+                          transform: `translate3d(${clampedDragOffsetX}px, ${depthOffsetY}px, 0) scale(${scale}) rotate(${dragRotation}deg)`,
+                          transition:
+                            mobileIsDragging && isTopCard
+                              ? "none"
+                              : "transform 220ms ease, opacity 220ms ease",
+                          touchAction: "pan-y",
+                        }}
+                        onPointerDown={
+                          isTopCard
+                            ? (event) => handleMobilePointerDown(event.clientX)
+                            : undefined
+                        }
+                        onPointerMove={
+                          isTopCard
+                            ? (event) => handleMobilePointerMove(event.clientX)
+                            : undefined
+                        }
+                        onPointerUp={isTopCard ? handleMobilePointerEnd : undefined}
+                        onPointerCancel={isTopCard ? handleMobilePointerEnd : undefined}
+                        onPointerLeave={isTopCard ? handleMobilePointerEnd : undefined}
+                      >
+                        <Card className="border border-border/70 bg-card/90 shadow-lg">
                           <CardHeader className="gap-2">
                             <div className="flex items-start justify-between gap-2">
                               <div>
@@ -566,10 +711,10 @@ export default function PoliciesPage() {
                             </div>
                           </CardContent>
                         </Card>
-                      </CarouselItem>
-                    ))}
-                  </CarouselContent>
-                </Carousel>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
 
               <Card className="hidden border border-border/70 bg-card/90 md:block">
