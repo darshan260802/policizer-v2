@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import type { ReactNode } from "react"
+import type { FocusEvent, ReactNode } from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FirebaseError } from "firebase/app"
 import {
@@ -165,6 +165,18 @@ function formatCurrency(value: number) {
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(value)
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof FirebaseError) {
+    return error.message
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  return fallback
 }
 
 export default function PoliciesPage() {
@@ -466,7 +478,16 @@ export default function PoliciesPage() {
     try {
       const payload = toPolicyInput(formState)
       if (payload.reminder.enabled) {
-        await ensurePushSubscriptionForUser(user.uid)
+        try {
+          await ensurePushSubscriptionForUser(user.uid)
+        } catch (subscriptionError) {
+          setActionMessage(
+            getErrorMessage(
+              subscriptionError,
+              "Policy will be saved, but push reminders are not active on this device yet."
+            )
+          )
+        }
       }
 
       if (drawerMode === "edit" && activePolicy) {
@@ -479,14 +500,25 @@ export default function PoliciesPage() {
       setFormState(createEmptyFormState())
       refreshPolicies()
     } catch (error) {
-      if (error instanceof FirebaseError) {
-        setFormError(error.message)
-      } else {
-        setFormError("Unable to save this policy right now.")
-      }
+      setFormError(getErrorMessage(error, "Unable to save this policy right now."))
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const handleDrawerFieldFocus = (event: FocusEvent<HTMLElement>) => {
+    if (window.innerWidth >= 768) {
+      return
+    }
+
+    const target = event.target
+    window.setTimeout(() => {
+      target.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+        behavior: "smooth",
+      })
+    }, 140)
   }
 
   const handleDelete = async () => {
@@ -889,7 +921,10 @@ export default function PoliciesPage() {
       </main>
 
       <Drawer open={drawerOpen} onOpenChange={closeDrawer}>
-        <DrawerContent key={`${drawerMode}-${activePolicy?.id ?? "new"}`}>
+        <DrawerContent
+          key={`${drawerMode}-${activePolicy?.id ?? "new"}`}
+          className="flex h-[92dvh] flex-col"
+        >
           <DrawerHeader>
             <DrawerTitle>
               {drawerMode === "create"
@@ -906,7 +941,10 @@ export default function PoliciesPage() {
           </DrawerHeader>
 
           {drawerMode === "view" && activePolicy ? (
-            <div className="space-y-3 overflow-y-auto px-4 pb-6 text-sm">
+            <div
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-6 text-sm"
+              style={{ scrollPaddingBottom: "45svh" }}
+            >
               <InfoPair label="Insurer" value={activePolicy.insurerName} />
               <InfoPair label="Policy number" value={activePolicy.policyNumber} />
               <InfoPair label="Beneficiary" value={activePolicy.beneficiaryName} />
@@ -951,7 +989,11 @@ export default function PoliciesPage() {
               />
             </div>
           ) : (
-            <div className="space-y-4 overflow-y-auto px-4 pb-2">
+            <div
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-2"
+              style={{ scrollPaddingBottom: "45svh" }}
+              onFocusCapture={handleDrawerFieldFocus}
+            >
               <FormField label="Insurer name" required htmlFor="insurerName">
                 <Input
                   id="insurerName"
