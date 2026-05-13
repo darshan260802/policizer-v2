@@ -17,6 +17,14 @@ import { db } from "@/lib/firebase"
 
 const premiumMethods = ["single", "monthly", "quarterly", "half-yearly", "yearly"] as const
 type PremiumMethod = (typeof premiumMethods)[number]
+const reminderFrequencies = ["once", "daily"] as const
+type ReminderFrequency = (typeof reminderFrequencies)[number]
+
+type PolicyReminder = {
+  enabled: boolean
+  daysBefore: number
+  frequency: ReminderFrequency
+}
 
 type PolicyInput = {
   insurerName: string
@@ -29,6 +37,7 @@ type PolicyInput = {
   premiumAmount: number
   sumAssured: number
   additionalNote: string
+  reminder: PolicyReminder
 }
 
 type InstallmentStatus = "paid" | "pending"
@@ -110,6 +119,21 @@ function monthsForMethod(method: PremiumMethod) {
       return 12
     case "single":
       return 0
+  }
+}
+
+function normalizePolicyReminder(value: Partial<PolicyReminder> | undefined): PolicyReminder {
+  const rawDays = Number(value?.daysBefore ?? 3)
+  const daysBefore = Number.isFinite(rawDays)
+    ? Math.max(1, Math.min(10, Math.floor(rawDays)))
+    : 3
+
+  return {
+    enabled: Boolean(value?.enabled),
+    daysBefore,
+    frequency: reminderFrequencies.includes(value?.frequency as ReminderFrequency)
+      ? (value?.frequency as ReminderFrequency)
+      : "daily",
   }
 }
 
@@ -219,6 +243,7 @@ async function listPolicies(uid: string) {
         uid?: string
         createdAtMs?: number
         updatedAtMs?: number
+        reminder?: Partial<PolicyReminder>
       }
 
       const installments = await getPolicyInstallments(policyDoc.id)
@@ -237,6 +262,7 @@ async function listPolicies(uid: string) {
         premiumAmount: Number(raw.premiumAmount ?? 0),
         sumAssured: Number(raw.sumAssured ?? 0),
         additionalNote: raw.additionalNote ?? "",
+        reminder: normalizePolicyReminder(raw.reminder),
         createdAtMs: Number(raw.createdAtMs ?? 0),
         updatedAtMs: Number(raw.updatedAtMs ?? 0),
         installments,
@@ -250,8 +276,10 @@ async function listPolicies(uid: string) {
 
 async function createPolicy(uid: string, input: PolicyInput) {
   const now = Date.now()
+  const reminder = normalizePolicyReminder(input.reminder)
   const policyDoc = await addDoc(collection(db, "policies"), {
     ...input,
+    reminder,
     uid,
     premiumAmount: Number(input.premiumAmount),
     sumAssured: Number(input.sumAssured),
@@ -263,8 +291,10 @@ async function createPolicy(uid: string, input: PolicyInput) {
 }
 
 async function updatePolicy(policyId: string, input: PolicyInput) {
+  const reminder = normalizePolicyReminder(input.reminder)
   await updateDoc(doc(db, "policies", policyId), {
     ...input,
+    reminder,
     premiumAmount: Number(input.premiumAmount),
     sumAssured: Number(input.sumAssured),
     updatedAtMs: Date.now(),
@@ -365,6 +395,8 @@ export type {
   PolicyInput,
   PolicyInsights,
   PolicyInstallment,
+  PolicyReminder,
   PolicyRecord,
   PremiumMethod,
+  ReminderFrequency,
 }

@@ -51,9 +51,55 @@ self.addEventListener("fetch", (event) => {
   )
 })
 
-// Push-ready extension point (provider-specific payload handling is added later).
-self.addEventListener("push", () => {})
+self.addEventListener("push", (event) => {
+  let payload = {}
+  if (event.data) {
+    try {
+      payload = event.data.json()
+    } catch {
+      payload = { body: event.data.text() }
+    }
+  }
 
-// Push-ready extension point (provider-specific click handling is added later).
-self.addEventListener("notificationclick", () => {})
+  const title = payload.title || "Policy reminder"
+  const body = payload.body || "A policy premium reminder is due."
+  const url = payload.url || "/policies"
+  const tag = payload.tag || "policy-reminder"
 
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-192x192.png",
+      tag,
+      renotify: true,
+      data: {
+        url,
+        policyId: payload.policyId || null,
+      },
+    })
+  )
+})
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+
+  const targetPath = event.notification.data?.url || "/policies"
+  const targetUrl = new URL(targetPath, self.location.origin).toString()
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          return client.navigate(targetUrl).then(() => client.focus())
+        }
+      }
+
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl)
+      }
+
+      return Promise.resolve()
+    })
+  )
+})

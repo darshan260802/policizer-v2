@@ -5,6 +5,7 @@ import type { ReactNode } from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FirebaseError } from "firebase/app"
 import {
+  BellRing,
   CalendarClock,
   Eye,
   FilePenLine,
@@ -52,6 +53,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { ensurePushSubscriptionForUser } from "@/lib/pwa/push-subscriptions"
 import {
   createPolicy,
   deletePolicy,
@@ -61,6 +63,7 @@ import {
   premiumMethods,
   updatePolicy,
   type PolicyInput,
+  type ReminderFrequency,
   type PolicyRecord,
   type PremiumMethod,
 } from "@/lib/policies"
@@ -79,6 +82,9 @@ type PolicyFormState = {
   premiumAmount: string
   sumAssured: string
   additionalNote: string
+  reminderEnabled: boolean
+  reminderDaysBefore: string
+  reminderFrequency: ReminderFrequency
 }
 
 function createEmptyFormState(): PolicyFormState {
@@ -94,6 +100,9 @@ function createEmptyFormState(): PolicyFormState {
     premiumAmount: "",
     sumAssured: "",
     additionalNote: "",
+    reminderEnabled: false,
+    reminderDaysBefore: "3",
+    reminderFrequency: "daily",
   }
 }
 
@@ -122,6 +131,9 @@ function toFormState(policy: PolicyRecord): PolicyFormState {
     premiumAmount: String(policy.premiumAmount),
     sumAssured: String(policy.sumAssured),
     additionalNote: policy.additionalNote,
+    reminderEnabled: policy.reminder.enabled,
+    reminderDaysBefore: String(policy.reminder.daysBefore),
+    reminderFrequency: policy.reminder.frequency,
   }
 }
 
@@ -139,6 +151,11 @@ function toPolicyInput(formState: PolicyFormState): PolicyInput {
     premiumAmount: Number(formState.premiumAmount),
     sumAssured: Number(formState.sumAssured),
     additionalNote: formState.additionalNote.trim(),
+    reminder: {
+      enabled: formState.reminderEnabled,
+      daysBefore: Number(formState.reminderDaysBefore),
+      frequency: formState.reminderFrequency,
+    },
   }
 }
 
@@ -172,13 +189,48 @@ export default function PoliciesPage() {
   const [mobileDragDeltaX, setMobileDragDeltaX] = useState(0)
   const [mobileIsDragging, setMobileIsDragging] = useState(false)
   const [mobileIsAnimating, setMobileIsAnimating] = useState(false)
+  const [reminderPolicyId, setReminderPolicyId] = useState("")
   const mobileDragStartXRef = useRef<number | null>(null)
   const mobileAnimationTimerRef = useRef<number | null>(null)
 
   const today = getTodayYmd()
   const isLoading = policies === null
-  const policyList = useMemo(() => policies ?? [], [policies])
+  const policyList = useMemo(() => {
+    const currentPolicies = policies ?? []
+    if (!reminderPolicyId) {
+      return currentPolicies
+    }
+
+    const reminderPolicyIndex = currentPolicies.findIndex(
+      (policy) => policy.id === reminderPolicyId
+    )
+    if (reminderPolicyIndex < 0) {
+      return currentPolicies
+    }
+
+    return [
+      currentPolicies[reminderPolicyIndex],
+      ...currentPolicies.slice(0, reminderPolicyIndex),
+      ...currentPolicies.slice(reminderPolicyIndex + 1),
+    ]
+  }, [policies, reminderPolicyId])
   const mobileSwipeEnabled = policyList.length > 1
+
+  useEffect(() => {
+    const syncReminderPolicyId = () => {
+      const nextReminderPolicyId = new URLSearchParams(window.location.search)
+        .get("reminderPolicyId")
+        ?.trim()
+      setReminderPolicyId(nextReminderPolicyId ?? "")
+    }
+
+    syncReminderPolicyId()
+    window.addEventListener("popstate", syncReminderPolicyId)
+
+    return () => {
+      window.removeEventListener("popstate", syncReminderPolicyId)
+    }
+  }, [])
 
   const getWrappedIndex = useCallback((index: number, length: number) => {
     if (length <= 0) {
@@ -386,6 +438,13 @@ export default function PoliciesPage() {
       return "Sum assured must be a positive number."
     }
 
+    if (value.reminderEnabled) {
+      const reminderDaysBefore = Number(value.reminderDaysBefore)
+      if (!Number.isInteger(reminderDaysBefore) || reminderDaysBefore < 1 || reminderDaysBefore > 10) {
+        return "Reminder days must be between 1 and 10."
+      }
+    }
+
     return null
   }
 
@@ -406,6 +465,9 @@ export default function PoliciesPage() {
 
     try {
       const payload = toPolicyInput(formState)
+      if (payload.reminder.enabled) {
+        await ensurePushSubscriptionForUser(user.uid)
+      }
 
       if (drawerMode === "edit" && activePolicy) {
         await updatePolicy(activePolicy.id, payload)
@@ -586,6 +648,7 @@ export default function PoliciesPage() {
                     }
 
                     const isTopCard = relativePosition === 0
+                    const isReminderTarget = policy.id === reminderPolicyId
                     const depthOffsetY = relativePosition * 14
                     const scale = 1 - relativePosition * 0.04
                     const dragOffsetX = isTopCard && mobileIsDragging ? mobileDragDeltaX : 0
@@ -623,11 +686,7 @@ export default function PoliciesPage() {
                         onPointerLeave={isTopCard ? handleMobilePointerEnd : undefined}
                       >
                         <Card
-                          className={
-                            isTopCard
-                              ? "border border-border/70 bg-card shadow-xl"
-                              : "border border-border/70 bg-card/90 shadow-lg backdrop-blur-sm"
-                          }
+                          className={`${isTopCard ? "border border-border/70 bg-card shadow-xl" : "border border-border/70 bg-card/90 shadow-lg backdrop-blur-sm"} ${isReminderTarget ? "border-primary ring-2 ring-primary/60" : ""}`}
                         >
                           <CardHeader className="gap-2">
                             <div className="flex items-start justify-between gap-2">
@@ -635,15 +694,23 @@ export default function PoliciesPage() {
                                 <CardTitle className="text-base">{policy.insurerName}</CardTitle>
                                 <CardDescription>#{policy.policyNumber}</CardDescription>
                               </div>
-                              <Badge
-                                variant={
-                                  isMarkAsPaidEnabled(policy) ? "destructive" : "secondary"
-                                }
-                              >
-                                {policy.nextPaymentDate
-                                  ? `Next: ${policy.nextPaymentDate}`
-                                  : "No dues"}
-                              </Badge>
+                              <div className="flex flex-col items-end gap-1">
+                                {isReminderTarget ? (
+                                  <Badge className="gap-1">
+                                    <BellRing className="size-3" />
+                                    Reminder
+                                  </Badge>
+                                ) : null}
+                                <Badge
+                                  variant={
+                                    isMarkAsPaidEnabled(policy) ? "destructive" : "secondary"
+                                  }
+                                >
+                                  {policy.nextPaymentDate
+                                    ? `Next: ${policy.nextPaymentDate}`
+                                    : "No dues"}
+                                </Badge>
+                              </div>
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-3">
@@ -738,12 +805,25 @@ export default function PoliciesPage() {
                     </TableHeader>
                     <TableBody>
                       {policyList.map((policy) => (
-                        <TableRow key={policy.id}>
+                        <TableRow
+                          key={policy.id}
+                          className={
+                            policy.id === reminderPolicyId
+                              ? "bg-primary/10 ring-1 ring-primary/50"
+                              : undefined
+                          }
+                        >
                           <TableCell>
                             <div className="font-medium">{policy.insurerName}</div>
                             <div className="text-xs text-muted-foreground">
                               #{policy.policyNumber}
                             </div>
+                            {policy.id === reminderPolicyId ? (
+                              <Badge className="mt-1 gap-1">
+                                <BellRing className="size-3" />
+                                Reminder
+                              </Badge>
+                            ) : null}
                           </TableCell>
                           <TableCell>{policy.beneficiaryName}</TableCell>
                           <TableCell>{premiumMethodLabels[policy.premiumMethod]}</TableCell>
@@ -856,6 +936,14 @@ export default function PoliciesPage() {
               <InfoPair
                 label="Installments (paid/pending)"
                 value={`${activePolicy.paidInstallments}/${activePolicy.pendingInstallments}`}
+              />
+              <InfoPair
+                label="Reminder"
+                value={
+                  activePolicy.reminder.enabled
+                    ? `${activePolicy.reminder.frequency === "daily" ? "Daily" : "Once"} (${activePolicy.reminder.daysBefore} day${activePolicy.reminder.daysBefore > 1 ? "s" : ""} before due)`
+                    : "Disabled"
+                }
               />
               <InfoPair
                 label="Additional note"
@@ -1006,6 +1094,78 @@ export default function PoliciesPage() {
                     }
                   />
                 </FormField>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-background/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Reminder</p>
+                    <p className="text-xs text-muted-foreground">
+                      Notify before next due date by push notification.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="reminderEnabled" className="text-xs">
+                      Enable
+                    </Label>
+                    <Switch
+                      id="reminderEnabled"
+                      checked={formState.reminderEnabled}
+                      onCheckedChange={(checked) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          reminderEnabled: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                {formState.reminderEnabled ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <FormField
+                      label="Remind before (days)"
+                      required
+                      htmlFor="reminderDaysBefore"
+                    >
+                      <Input
+                        id="reminderDaysBefore"
+                        type="number"
+                        min="1"
+                        max="10"
+                        step="1"
+                        value={formState.reminderDaysBefore}
+                        onChange={(event) =>
+                          setFormState((prev) => ({
+                            ...prev,
+                            reminderDaysBefore: event.target.value,
+                          }))
+                        }
+                      />
+                    </FormField>
+                    <FormField label="Frequency" required htmlFor="reminderFrequency">
+                      <Select
+                        value={formState.reminderFrequency}
+                        onValueChange={(value) =>
+                          setFormState((prev) => ({
+                            ...prev,
+                            reminderFrequency: value as ReminderFrequency,
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="reminderFrequency" className="w-full">
+                          <SelectValue placeholder="Select frequency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="once">Once at N days before due</SelectItem>
+                          <SelectItem value="daily">
+                            Every day from N days before until paid
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                  </div>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -1,21 +1,21 @@
-# Next.js template
+# Policizer
 
-This is a Next.js template with shadcn/ui.
+Insurance policy manager built with Next.js + Firebase, with PWA support and push reminders.
 
-## Adding components
+## Reminder push setup
 
-To add components to your app, run the following command:
+Set these environment variables for reminder delivery:
 
 ```bash
-npx shadcn@latest add button
+NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY=...
+WEB_PUSH_VAPID_PUBLIC_KEY=...
+WEB_PUSH_VAPID_PRIVATE_KEY=...
+WEB_PUSH_CONTACT_EMAIL=alerts@example.com
+FIREBASE_PROJECT_ID=...
+FIREBASE_CLIENT_EMAIL=...
+FIREBASE_PRIVATE_KEY=...
+CRON_SECRET=...
 ```
 
-This will place the ui components in the `components` directory.
-
-## Using components
-
-To use the components in your app, import them as follows:
-
-```tsx
-import { Button } from "@/components/ui/button";
-```
+- The daily cron is configured in `vercel.json` at `30 2 * * *` (08:00 IST).
+- Route: `GET /api/cron/reminders` (protect with `Authorization: Bearer $CRON_SECRET` when `CRON_SECRET` is set).
